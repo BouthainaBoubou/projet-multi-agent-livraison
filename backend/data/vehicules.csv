@@ -1,0 +1,5 @@
+id,capacite_kg,position_actuelle,charge_actuelle_kg,statut
+V001,1500,D,0,AU_DEPOT
+V002,1200,D,0,AU_DEPOT
+V003,800,D,0,AU_DEPOT
+V004,600,D,0,AU_DEPOT
