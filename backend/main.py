@@ -7,7 +7,7 @@ vérifier manuellement que le chargement et les agents fonctionnent.
 from pathlib import Path
 
 from src.agents.order_agent import OrderAgent
-from src.data_loader.loader import DonneesLivraison, charger_tout
+from src.data.loader import DonneesLivraison, charger_tout
 from src.agents.vehicle_agent import VehicleAgent
 from src.agents.traffic_agent import TrafficAgent
 

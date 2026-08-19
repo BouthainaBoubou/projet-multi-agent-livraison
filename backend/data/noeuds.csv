@@ -1,11 +1,22 @@
-id,nom,latitude,longitude
-D,Casablanca (depot),33.5731,-7.5898
-Z1,Rabat,34.0209,-6.8416
-Z2,Kenitra,34.2610,-6.5802
-Z3,Tanger,35.7595,-5.8340
-Z4,Fes,34.0331,-5.0003
-Z5,Meknes,33.8935,-5.5473
-Z6,Marrakech,31.6295,-7.9811
-Z7,Agadir,30.4278,-9.5981
-Z8,Essaouira,31.5085,-9.7595
-Z9,El Jadida,33.2549,-8.5060
+id,nom,latitude,longitude,pays,type_noeud,duree_traitement_min
+CASA,Casablanca (hub central),33.5731,-7.5898,MA,HUB,45
+RAB,Rabat (agence),34.0209,-6.8416,MA,AGENCE,30
+KEN,Kenitra,34.2610,-6.5802,MA,CLIENT,20
+TNG,Tanger (agence),35.7595,-5.8340,MA,AGENCE,30
+TMED,Port de Tanger Med,35.8838,-5.5069,MA,PORT,120
+FES,Fes (agence),34.0331,-5.0003,MA,AGENCE,30
+MEK,Meknes,33.8935,-5.5473,MA,CLIENT,20
+OUJ,Oujda,34.6814,-1.9086,MA,CLIENT,20
+MRK,Marrakech (agence),31.6295,-7.9811,MA,AGENCE,30
+AGA,Agadir,30.4278,-9.5981,MA,CLIENT,25
+ESS,Essaouira,31.5085,-9.7595,MA,CLIENT,20
+ELJ,El Jadida,33.2549,-8.5060,MA,CLIENT,20
+SAF,Safi,32.2994,-9.2372,MA,CLIENT,20
+BEN,Beni Mellal,32.3373,-6.3498,MA,CLIENT,20
+ALG,Port d'Algesiras,36.1408,-5.4562,ES,PORT,120
+MAD,Madrid (agence partenaire),40.4168,-3.7038,ES,AGENCE,40
+VLC,Valence,39.4699,-0.3763,ES,CLIENT,30
+BCN,Barcelone,41.3874,2.1686,ES,CLIENT,30
+PER,Perpignan,42.6887,2.8948,FR,CLIENT,25
+LYO,Lyon,45.7640,4.8357,FR,CLIENT,30
+PAR,Paris (Rungis),48.8566,2.3522,FR,CLIENT,40

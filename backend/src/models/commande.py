@@ -8,11 +8,22 @@ class Priorite(Enum):
     """Niveau d'urgence d'une commande.
 
     La valeur numérique est volontairement croissante avec l'urgence :
-    elle servira plus tard à trier ou à pondérer dans l'optimisation.
+    elle sert à trier et à pondérer les retards dans la fonction objectif.
     """
     BASSE = 1
     NORMALE = 2
     HAUTE = 3
+
+
+class TypeLivraison(Enum):
+    """Portée géographique d'une commande.
+
+    Donnée dérivée des pays de l'origine et de la destination. Elle est
+    matérialisée ici plutôt que recalculée partout, mais une seule
+    autorité la renseigne : le loader, au moment du chargement.
+    """
+    NATIONALE = "nationale"
+    INTERNATIONALE = "internationale"
 
 
 class StatutCommande(Enum):
@@ -20,7 +31,7 @@ class StatutCommande(Enum):
     EN_ATTENTE = "en_attente"   # créée, pas encore affectée à un véhicule
     ASSIGNEE = "assignee"       # affectée par l'agent d'optimisation
     EN_COURS = "en_cours"       # le véhicule est en route
-    LIVREE = "livree"           # terminée dans les délais ou non
+    LIVREE = "livree"           # terminée, dans les délais ou non
     ECHOUEE = "echouee"         # impossible à livrer
 
 
@@ -33,16 +44,19 @@ class Commande:
     """
 
     # --- Identité ---
-    id: str                     
+    id: str
 
     # --- Données métier ---
-    destination: str            # identifiant du noeud de livraison, ex. "Z3"
+    origine: str                # identifiant du noeud d'enlèvement (hub ou agence)
+    destination: str            # identifiant du noeud de livraison
     poids: float                # en kilogrammes
     priorite: Priorite
-    delai_minutes: int          # délai max en minutes depuis l'instant t0
+    delai_minutes: int          # délai maximum en minutes depuis l'instant t0
+
+    # --- Donnée dérivée, renseignée par le loader ---
+    type_livraison: TypeLivraison = TypeLivraison.NATIONALE
 
     # --- État courant ---
-   
     statut: StatutCommande = field(default=StatutCommande.EN_ATTENTE)
     vehicule_assigne: str | None = field(default=None)
 
@@ -62,10 +76,22 @@ class Commande:
                 f"Commande {self.id} : le délai doit être strictement positif "
                 f"(reçu : {self.delai_minutes})"
             )
+        if not self.origine:
+            raise ValueError(f"Commande {self.id} : origine vide")
         if not self.destination:
             raise ValueError(f"Commande {self.id} : destination vide")
+        if self.origine == self.destination:
+            raise ValueError(
+                f"Commande {self.id} : origine et destination identiques "
+                f"('{self.origine}')"
+            )
 
     @property
     def est_urgente(self) -> bool:
         """Donnée dérivée : ne dépend que des attributs de l'objet."""
-        return self.priorite == Priorite.HAUTE
+        return self.priorite is Priorite.HAUTE
+
+    @property
+    def est_internationale(self) -> bool:
+        """Vrai si la commande franchit au moins une frontière."""
+        return self.type_livraison is TypeLivraison.INTERNATIONALE
