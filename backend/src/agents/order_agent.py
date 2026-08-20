@@ -2,9 +2,27 @@
 
 Il ne connaît que les commandes : ni véhicules, ni routes, ni graphe.
 Toute question croisant deux domaines appartient à l'agent qui orchestre.
+
+Depuis le 20/08/2026, l'agent porte aussi la **saisie** : une commande
+dont un critère de classification manque au fichier est bloquée au
+statut `INCOMPLETE`, et c'est le dispatcheur qui la débloque en la
+complétant. Le programme ne choisit jamais à sa place.
 """
 
-from src.models.commande import Commande, StatutCommande, TypeLivraison
+from src.models.commande import (
+    Commande, StatutCommande, TypeLivraison, convertir_critere,
+    valeurs_possibles,
+)
+
+# États dans lesquels une commande peut encore être reclassée. Une fois
+# le véhicule parti, changer la fragilité ou le niveau de service d'un
+# lot déjà chargé ne veut plus rien dire : la marchandise est dans le
+# camion, telle qu'elle a été chargée.
+STATUTS_MODIFIABLES = (
+    StatutCommande.INCOMPLETE,
+    StatutCommande.EN_ATTENTE,
+    StatutCommande.ASSIGNEE,
+)
 
 
 class OrderAgent:
@@ -21,10 +39,28 @@ class OrderAgent:
     # --- Lectures ---
 
     def commandes_en_attente(self) -> list[Commande]:
-        """Les commandes pas encore affectées à un véhicule."""
+        """Les commandes complètes, pas encore affectées à un véhicule.
+
+        Une commande incomplète n'y figure pas : elle n'a pas de statut
+        `EN_ATTENTE`. C'est par ce seul filtre que le blocage se propage
+        à toute la chaîne — l'optimiseur n'a rien de particulier à
+        vérifier, il ne voit tout simplement pas les commandes non
+        classées.
+        """
         return [
             commande for commande in self.commandes
             if commande.statut is StatutCommande.EN_ATTENTE
+        ]
+
+    def commandes_incompletes(self) -> list[Commande]:
+        """Les commandes à compléter avant toute planification.
+
+        C'est la liste de travail du dispatcheur : chacune sait dire
+        elle-même ce qui lui manque, via `criteres_manquants`.
+        """
+        return [
+            commande for commande in self.commandes
+            if commande.statut is StatutCommande.INCOMPLETE
         ]
 
     def commandes_par_type(self, type_livraison: TypeLivraison) -> list[Commande]:
@@ -48,6 +84,8 @@ class OrderAgent:
 
         Tri sur deux critères de sens opposés : priorité décroissante
         (d'où le signe moins), puis délai croissant à priorité égale.
+        La priorité n'est plus lue dans un fichier : elle est calculée
+        par la grille de classification, donc explicable ligne à ligne.
         Le filtre par type est optionnel : sans argument, on trie tout.
         """
         commandes = (
@@ -62,6 +100,13 @@ class OrderAgent:
                 commande.delai_minutes,
             ),
         )
+
+    def commandes_sensibles(self) -> list[Commande]:
+        """Les commandes à diffusion restreinte, tous statuts confondus."""
+        return [
+            commande for commande in self.commandes
+            if commande.confidentialite is not None and commande.est_sensible
+        ]
 
     def poids_total_en_attente(
         self, type_livraison: TypeLivraison | None = None
@@ -89,7 +134,71 @@ class OrderAgent:
                 return commande
         return None
 
-    # --- Modifications ---
+    def vue(self, id_commande: str, role: str) -> dict:
+        """Ce qu'un rôle a le droit de voir d'une commande."""
+        return self._exiger_commande(id_commande).vue(role)
+
+    # --- Saisie des critères de classification ---
+
+    def completer_commande(self, id_commande: str, **criteres) -> Commande:
+        """Renseigne les critères manquants d'une commande incomplète.
+
+        C'est le geste qui débloque la planification. Il n'est pas
+        automatisable : l'information vient du client, pas du fichier.
+
+        La saisie peut être partielle — le dispatcheur remplit ce qu'il
+        sait, la commande reste incomplète tant qu'il manque un critère.
+        Elle bascule d'elle-même en `EN_ATTENTE` au quatrième renseigné.
+        """
+        commande = self._exiger_commande(id_commande)
+        if commande.statut is not StatutCommande.INCOMPLETE:
+            raise ValueError(
+                f"Commande {id_commande} : statut {commande.statut.value}, "
+                f"elle est déjà classée ; utiliser modifier_commande() pour "
+                f"changer un critère"
+            )
+        return self._ecrire_criteres(commande, criteres)
+
+    def modifier_commande(self, id_commande: str, **criteres) -> Commande:
+        """Change un ou plusieurs critères d'une commande déjà classée.
+
+        Cas réel : le client rappelle et change son niveau de service, ou
+        signale que le lot est finalement fragile. Autorisé tant que la
+        marchandise n'est pas partie ; une commande en cours de route ou
+        livrée n'est plus modifiable, sinon le plan décrirait une réalité
+        qui n'existe pas.
+
+        L'agent ne replanifie pas : ce n'est pas son rôle. C'est le
+        `CoordinatorAgent` qui décide qu'un changement vaut un nouveau
+        calcul.
+        """
+        commande = self._exiger_commande(id_commande)
+        if commande.statut not in STATUTS_MODIFIABLES:
+            raise ValueError(
+                f"Commande {id_commande} : statut {commande.statut.value}, "
+                f"une commande dont la marchandise est partie ou livrée ne "
+                f"peut plus être reclassée"
+            )
+        if not criteres:
+            raise ValueError(
+                f"Commande {id_commande} : aucun critère fourni à modifier"
+            )
+        return self._ecrire_criteres(commande, criteres)
+
+    def criteres_attendus(self, id_commande: str) -> dict[str, list[str]]:
+        """Ce que l'interface doit demander, et les valeurs qu'elle peut proposer.
+
+        L'écran de saisie ne réinvente pas la liste des valeurs : il la
+        demande ici. Un champ de texte libre laisserait entrer n'importe
+        quoi ; une liste construite à partir du domaine ne le peut pas.
+        """
+        commande = self._exiger_commande(id_commande)
+        return {
+            critere: valeurs_possibles(critere)
+            for critere in commande.criteres_manquants
+        }
+
+    # --- Modifications d'état ---
 
     def assigner_commande(self, id_commande: str, vehicule_id: str) -> None:
         """Enregistre qu'une commande part avec un véhicule donné.
@@ -134,7 +243,8 @@ class OrderAgent:
 
         C'est l'opération centrale de la réoptimisation dynamique : à la
         panne d'un véhicule, ses commandes reviennent dans le vivier au
-        lieu d'être perdues.
+        lieu d'être perdues. Une commande incomplète, elle, ne revient
+        pas dans le vivier : elle retourne à la file de saisie.
         """
         commande = self._exiger_commande(id_commande)
         if commande.statut is StatutCommande.LIVREE:
@@ -144,8 +254,26 @@ class OrderAgent:
             )
         commande.statut = StatutCommande.EN_ATTENTE
         commande.vehicule_assigne = None
+        commande.rafraichir_statut()
 
     # --- Interne ---
+
+    def _ecrire_criteres(self, commande: Commande, criteres: dict) -> Commande:
+        """Écrit des critères sur une commande, après conversion et contrôle.
+
+        Rien n'est écrit tant que **tout** n'a pas été validé : une
+        saisie à moitié appliquée laisserait la commande dans un état
+        que personne n'a voulu.
+        """
+        valides = {
+            nom: convertir_critere(nom, valeur)
+            for nom, valeur in criteres.items()
+            if valeur is not None
+        }
+        for nom, valeur in valides.items():
+            setattr(commande, nom, valeur)
+        commande.rafraichir_statut()
+        return commande
 
     def _exiger_commande(self, id_commande: str) -> Commande:
         """Retrouve une commande, ou lève une exception si elle n'existe pas."""

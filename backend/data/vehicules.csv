@@ -1,9 +1,9 @@
-id,capacite_kg,position_actuelle,charge_actuelle_kg,statut,type_vehicule,pays_base,autorise_international
-V001,24000,CASA,0,AU_DEPOT,SEMI_REMORQUE,MA,True
-V002,22000,CASA,0,AU_DEPOT,SEMI_REMORQUE,MA,True
-V003,24000,TNG,0,AU_DEPOT,SEMI_REMORQUE,MA,True
-V004,12000,CASA,0,AU_DEPOT,PORTEUR,MA,False
-V005,10000,RAB,0,AU_DEPOT,PORTEUR,MA,False
-V006,8000,MRK,0,AU_DEPOT,PORTEUR,MA,False
-V007,3500,CASA,0,AU_DEPOT,FOURGON,MA,False
-V008,3000,FES,0,AU_DEPOT,FOURGON,MA,False
+id,capacite_kg,position_actuelle,charge_actuelle_kg,statut,type_vehicule,pays_base,autorise_international,modele,equipement_fragile
+V001,24000,CASA,0,AU_DEPOT,SEMI_REMORQUE,MA,True,Volvo FH 460 - semi a rideaux coulissants,True
+V002,22000,CASA,0,AU_DEPOT,SEMI_REMORQUE,MA,True,Mercedes-Benz Actros 1845 - semi caisse fermee,True
+V003,24000,TNG,0,AU_DEPOT,SEMI_REMORQUE,MA,True,Renault T 480 - semi plateau bache,False
+V004,12000,CASA,0,AU_DEPOT,PORTEUR,MA,False,Mercedes-Benz Atego 1218 - caisse fourgon avec hayon,True
+V005,10000,RAB,0,AU_DEPOT,PORTEUR,MA,False,Renault D Wide 320 - caisse bachee,False
+V006,8000,MRK,0,AU_DEPOT,PORTEUR,MA,False,Isuzu NQR 75 - caisse fourgon,False
+V007,3500,CASA,0,AU_DEPOT,FOURGON,MA,False,Renault Master L3H2 - fourgon tole,False
+V008,3000,FES,0,AU_DEPOT,FOURGON,MA,False,Mercedes-Benz Sprinter 315 - fourgon tole,True

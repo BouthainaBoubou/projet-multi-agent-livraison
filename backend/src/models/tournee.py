@@ -30,6 +30,10 @@ class Tournee:
     cout_dh: float = 0.0
     retard_pondere: float = 0.0
     charge_kg: float = 0.0
+    # Somme, sur les commandes de la tournée, du nombre d'arrêts
+    # intermédiaires subis avant leur livraison, pondéré par leur classe
+    # de fragilité. Vaut zéro pour une tournée de marchandises standard.
+    risque_fragilite: float = 0.0
 
     # Heure d'arrivée à chaque arrêt, en minutes depuis le départ.
     arrivees: dict[str, float] = field(default_factory=dict)
@@ -79,6 +83,11 @@ class Plan:
     @property
     def retard_total_pondere(self) -> float:
         return sum(tournee.retard_pondere for tournee in self.tournees)
+
+    @property
+    def risque_total(self) -> float:
+        """Risque de casse cumulé sur l'ensemble des tournées."""
+        return sum(tournee.risque_fragilite for tournee in self.tournees)
 
     @property
     def commandes_servies(self) -> int:

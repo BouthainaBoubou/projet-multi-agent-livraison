@@ -3,9 +3,19 @@
 Il ne connaît que les tronçons : ni commandes, ni véhicules, ni graphe.
 Il modifie l'état courant du réseau (trafic, attente aux frontières,
 blocages), jamais les données de référence (distance, temps de base).
+
+Deux façons de faire varier le trafic, à ne pas confondre :
+
+- **le profil horaire** (`appliquer_profil_horaire`) : la circulation
+  normale d'une journée ordinaire, qui dépend de l'heure de départ et du
+  type de tronçon. C'est le régime de base, il s'applique à tout le
+  réseau d'un coup.
+- **l'incident déclaré** (`mettre_a_jour_trafic`) : un accident, un
+  chantier, une manifestation. Il vise un tronçon précis et vient
+  écraser le régime de base sur celui-là seulement.
 """
 
-from src.models.route import ModeTransport, TronconRoute
+from src.models.route import ModeTransport, TronconRoute, coefficient_horaire
 
 
 class TrafficAgent:
@@ -13,6 +23,10 @@ class TrafficAgent:
 
     def __init__(self, troncons: list[TronconRoute]) -> None:
         self.troncons = troncons
+        # Heure de départ actuellement appliquée au réseau, ou None tant
+        # qu'aucun profil n'a été posé : le réseau tourne alors sur les
+        # niveaux de trafic écrits dans le fichier.
+        self.heure_appliquee: int | None = None
 
     # --- Lectures ---
 
@@ -32,6 +46,17 @@ class TrafficAgent:
         return [
             troncon for troncon in self.troncons
             if troncon.franchit_frontiere
+        ]
+
+    def troncons_congestionnes(self, seuil: float = 1.2) -> list[TronconRoute]:
+        """Les tronçons dont le trafic dépasse un seuil donné.
+
+        Sert à expliquer un plan : quand Z monte après un changement
+        d'heure de départ, cette liste dit exactement où.
+        """
+        return [
+            troncon for troncon in self.troncons
+            if troncon.niveau_trafic >= seuil
         ]
 
     def trouver_troncon(
@@ -56,6 +81,31 @@ class TrafficAgent:
 
     # --- Modifications ---
 
+    def appliquer_profil_horaire(self, heure: int) -> None:
+        """Règle tout le réseau sur la circulation d'une heure de départ.
+
+        C'est la réponse à « prendre en considération le trafic » : le
+        trafic n'est plus une valeur figée qu'un opérateur déclare, il
+        découle de l'heure à laquelle on décide de partir. Une même
+        journée de commandes planifiée à 6 h et à 8 h ne produit plus le
+        même plan, ni le même Z.
+
+        Les traversées maritimes sont laissées de côté : leur aléa est
+        l'attente d'embarquement, pas la congestion routière — et le
+        modèle interdit d'ailleurs de leur donner un niveau de trafic.
+        """
+        if not 0 <= heure <= 23:
+            raise ValueError(
+                f"Heure de départ invalide : {heure} (attendu entre 0 et 23)"
+            )
+        for troncon in self.troncons:
+            if troncon.mode is ModeTransport.MARITIME:
+                continue
+            troncon.niveau_trafic = coefficient_horaire(
+                troncon.profil_trafic, heure
+            )
+        self.heure_appliquee = heure
+
     def bloquer_troncon(self, origine: str, destination: str) -> None:
         """Rend un tronçon impraticable (scénario 3 du cahier des charges)."""
         troncon = self._exiger_troncon(origine, destination)
@@ -70,6 +120,10 @@ class TrafficAgent:
         self, origine: str, destination: str, niveau: float
     ) -> None:
         """Modifie le multiplicateur de trafic d'un tronçon routier.
+
+        Incident ponctuel : il écrase, sur ce seul tronçon, le niveau
+        posé par le profil horaire. Reposer un profil ensuite effacerait
+        l'incident — c'est voulu, un profil décrit une journée normale.
 
         La garde sur le niveau n'est pas redondante avec celle du modèle :
         `__post_init__` ne s'exécute qu'à la construction de l'objet, pas

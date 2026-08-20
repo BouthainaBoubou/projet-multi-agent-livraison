@@ -11,6 +11,14 @@ Usage :
         --arrets CASA,MAD --itineraire CASA,RAB,TNG,TMED,ALG,MAD \\
         --vehicule V001 --cle-api $ORS_KEY
 
+Depuis le 20/08/2026, cette carte est une **vue de rôle** : elle est
+destinée au conducteur, elle n'affiche donc que ce qu'un conducteur a le
+droit de voir. Le filtrage n'est pas écrit ici — il appartient à
+`Commande.vue("conducteur")`, seule autorité sur ce qu'une commande
+protège. Une commande sensible n'apparaît que par son identifiant : ni
+poids, ni classification, ni client. Un chauffeur transporte un colis,
+il n'a pas à savoir ce qu'il transporte ni pour qui.
+
 Tant que `RouteAgent` n'existe pas, l'itinéraire complet est passé à la
 main. Le jour où il existe, une seule ligne change dans `main` :
 `itineraire = route.itineraire_complet(tournee.sequence)`.
@@ -21,6 +29,7 @@ import json
 import re
 from pathlib import Path
 
+from src.agents.route_agent import RouteAgent
 from src.data.loader import charger_tout
 from src.models.route import ModeTransport
 from src.services.geometrie import ServiceGeometrie
@@ -33,6 +42,11 @@ NOMS_AFFICHES = {
     "ALG": "Algésiras", "MAD": "Madrid", "VLC": "Valence",
     "BCN": "Barcelone", "PER": "Perpignan", "LYO": "Lyon", "PAR": "Paris",
 }
+
+# Rôle auquel cette carte est destinée. Le changer suffirait à tout
+# dévoiler : c'est pourquoi il est nommé ici, en clair, et non enfoui
+# dans un appel au milieu du fichier.
+ROLE_DESTINATAIRE = "conducteur"
 
 
 def nom_court(id_noeud, par_id):
@@ -84,8 +98,14 @@ def construire_etapes(donnees, itineraire, service):
     return etapes
 
 
-def construire_arrets(donnees, arrets, itineraire):
-    """Prépare la feuille de route : que fait le chauffeur à chaque arrêt."""
+def construire_arrets(donnees, arrets, itineraire, role=ROLE_DESTINATAIRE):
+    """Prépare la feuille de route : que fait le chauffeur à chaque arrêt.
+
+    Les commandes ne sont pas recopiées champ par champ : on demande à
+    chacune la vue correspondant au rôle. C'est la seule façon de
+    garantir qu'aucun écran n'oubliera le masquage — il n'existe pas
+    d'autre chemin vers la donnée.
+    """
     par_id = {n.id: n for n in donnees.noeuds}
     fiches = []
 
@@ -101,10 +121,7 @@ def construire_arrets(donnees, arrets, itineraire):
             "lat": noeud.latitude, "lon": noeud.longitude,
             "traitement": noeud.duree_traitement_min,
             "action": "Chargement" if rang == 0 else "Livraison",
-            "commandes": [
-                {"id": c.id, "poids": c.poids, "priorite": c.priorite.name}
-                for c in a_livrer
-            ],
+            "commandes": [commande.vue(role) for commande in a_livrer],
             "traverse": id_noeud in itineraire,
         })
 
@@ -121,6 +138,19 @@ def construire_arrets(donnees, arrets, itineraire):
             "traitement": noeud.duree_traitement_min,
             "action": "Passage", "commandes": [], "traverse": True,
         })
+
+    # Remettre les fiches dans l'ordre du trajet, arrêts et simples
+    # passages mélangés. Sans ce tri, les noeuds traversés sans arrêt se
+    # retrouvent tous en fin de liste : le chauffeur lit « Perpignan »,
+    # puis « Tanger Med » — c'est-à-dire l'inverse de ce qu'il va vivre.
+    # La numérotation des arrêts, elle, ne bouge pas : un passage n'est
+    # pas un arrêt, il reste sans numéro.
+    position_dans_itineraire: dict[str, int] = {}
+    for position, id_noeud in enumerate(itineraire):
+        position_dans_itineraire.setdefault(id_noeud, position)
+    fiches.sort(
+        key=lambda fiche: position_dans_itineraire.get(fiche["id"], len(itineraire))
+    )
     return fiches
 
 
@@ -139,6 +169,7 @@ GABARIT = """<!DOCTYPE html>
     --hairline: #e1e0d9; --anneau: rgba(11,11,11,0.10);
     --hub: #2a78d6; --agence: #1baf7a; --port: #eb6834;
     --route: #2a78d6; --congestion: #fab219; --bloque: #d03b3b;
+    --fragile: #a4622a; --confidentiel: #6b6a66;
   }
   * { box-sizing: border-box; }
   body {
@@ -172,6 +203,8 @@ GABARIT = """<!DOCTYPE html>
   .nom { font-weight: 600; }
   .meta { color: var(--ink-2); font-size: 12.5px; }
   .cmd { color: var(--muted); font-size: 12px; }
+  .cmd .fragile { color: var(--fragile); font-weight: 600; }
+  .cmd .confidentiel { color: var(--confidentiel); font-style: italic; }
   .avert {
     background: rgba(250,178,25,0.14); border: 1px solid rgba(250,178,25,0.5);
     border-radius: 7px; padding: 9px 11px; font-size: 12.5px; color: var(--ink-2);
@@ -226,6 +259,27 @@ function styleEtape(e) {
   return { color: "#2a78d6", weight: 5 };
 }
 
+/* Les commandes arrivent déjà filtrées par le modèle : cette page ne
+   voit jamais le poids ni la classification d'un lot confidentiel, elle
+   ne peut donc pas les afficher par accident. Elle se contente de
+   mettre en forme ce qu'on lui a laissé. */
+function libelleCommande(c) {
+  if (c.confidentiel) return `${c.id} — <span class="confidentiel">contenu confidentiel</span>`;
+  const mention =
+    c.fragilite === "tres_fragile" ? ` · <span class="fragile">TRÈS FRAGILE</span>`
+    : c.fragilite === "fragile" ? ` · <span class="fragile">fragile</span>`
+    : "";
+  return `${c.id} — ${c.poids} kg${mention}`;
+}
+
+function libelleCommandeTexte(c) {
+  if (c.confidentiel) return `${c.id} — contenu confidentiel`;
+  const mention =
+    c.fragilite === "tres_fragile" ? " · TRÈS FRAGILE"
+    : c.fragilite === "fragile" ? " · fragile" : "";
+  return `${c.id} — ${c.poids} kg${mention}`;
+}
+
 const COULEURS = { hub: "#2a78d6", agence: "#1baf7a", port: "#eb6834", client: "#52514e" };
 const approximatifs = ETAPES.filter(e => e.approximatif && !e.maritime).length;
 let carte = null;
@@ -241,7 +295,7 @@ for (const a of ARRETS) {
     `<div class="nom">${a.nom}</div>` +
     `<div class="meta">${a.action} · ${a.traitement} min sur place</div>` +
     (a.commandes.length
-      ? `<div class="cmd">${a.commandes.map(c => c.id + " (" + c.poids + " kg)").join(", ")}</div>`
+      ? `<div class="cmd">${a.commandes.map(libelleCommande).join("<br>")}</div>`
       : "") +
     `</div>`;
   li.addEventListener("click", () => { if (carte) carte.setView([a.lat, a.lon], 11); });
@@ -282,7 +336,7 @@ if (!carteDisponible) {
       fillColor: COULEURS[a.type] || "#52514e",
       color: "#fff", weight: 2, fillOpacity: 1,
     }).addTo(carte);
-    const lignes = a.commandes.map(c => `${c.id} — ${c.poids} kg (${c.priorite.toLowerCase()})`);
+    const lignes = a.commandes.map(libelleCommandeTexte);
     marqueur.bindPopup(
       `<b>${a.complet}</b><br>${a.action}<br>Immobilisation ${a.traitement} min` +
       (lignes.length ? "<br>" + lignes.join("<br>") : "")
@@ -315,7 +369,8 @@ def main() -> None:
     analyseur.add_argument("--arrets", default="CASA,MRK,AGA",
                            help="identifiants des arrêts, séparés par des virgules")
     analyseur.add_argument("--itineraire", default=None,
-                           help="tous les noeuds traversés (défaut : les arrêts)")
+                           help="tous les noeuds traversés (défaut : calculé "
+                                "par le RouteAgent à partir des arrêts)")
     analyseur.add_argument("--vehicule", default="V001")
     analyseur.add_argument("--cle-api", default=None,
                            help="clé OpenRouteService ; sans elle, tracés approximatifs")
@@ -325,7 +380,18 @@ def main() -> None:
 
     donnees = charger_tout("data")
     arrets = options.arrets.split(",")
-    itineraire = options.itineraire.split(",") if options.itineraire else arrets
+    if options.itineraire:
+        itineraire = options.itineraire.split(",")
+    else:
+        # Deux arrêts qui se suivent dans une tournée ne sont pas
+        # forcément voisins sur le réseau : Kénitra et Marrakech n'ont
+        # aucune liaison directe. Le chemin entre eux n'est plus à
+        # déplier à la main — on le demande au `RouteAgent`, la même
+        # autorité que celle qui a calculé le plan. C'est aussi ce qui
+        # garantit que la carte respecte les tronçons bloqués.
+        itineraire = RouteAgent(
+            donnees.noeuds, donnees.troncons
+        ).itineraire_complet(arrets)
 
     service = ServiceGeometrie(
         donnees.noeuds, donnees.troncons,
@@ -357,9 +423,16 @@ def main() -> None:
 
     Path(options.sortie).write_text(page, encoding="utf-8")
     approx = sum(1 for e in etapes if e["approximatif"] and not e["maritime"])
+    confidentielles = sum(
+        1 for fiche in fiches for commande in fiche["commandes"]
+        if commande.get("confidentiel")
+    )
     print(f"Carte écrite : {options.sortie}")
     print(f"{len(etapes)} étapes, {km} km, {duree} — "
           f"{service.appels_reseau} appel(s) réseau, {approx} tracé(s) approximatif(s)")
+    if confidentielles:
+        print(f"{confidentielles} commande(s) affichée(s) sans détail "
+              f"(confidentialité), rôle « {ROLE_DESTINATAIRE} »")
 
 
 if __name__ == "__main__":

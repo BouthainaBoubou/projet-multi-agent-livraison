@@ -16,6 +16,12 @@ La réoptimisation dynamique tient en trois gestes, toujours les mêmes :
 Le troisième geste est celui qui compte pour la soutenance : sans
 comparaison chiffrée avant/après, « le système réagit » n'est qu'une
 affirmation.
+
+Depuis le 20/08/2026, le coordinateur porte aussi la **porte d'entrée du
+blocage** : il refuse de planifier tant qu'une commande n'est pas
+classée. C'est le seul endroit où ce refus est écrit, parce que c'est le
+seul point d'entrée de l'application — le placer ailleurs reviendrait à
+le répéter dans chaque agent.
 """
 
 from dataclasses import dataclass, field
@@ -31,6 +37,27 @@ from src.models.tournee import Plan, Tournee
 from src.models.vehicule import StatutVehicule
 
 
+class CommandesIncompletes(Exception):
+    """Des commandes ne sont pas classées : la planification est refusée.
+
+    Exception dédiée, et non `ValueError` : l'interface doit pouvoir
+    distinguer « le dispatcheur a du travail à faire » d'une vraie erreur
+    de programmation, et rediriger vers l'écran de saisie plutôt que
+    d'afficher un message d'échec.
+    """
+
+    def __init__(self, manquants: dict[str, list[str]]) -> None:
+        self.manquants = manquants
+        detail = "; ".join(
+            f"{id_commande} ({', '.join(criteres)})"
+            for id_commande, criteres in sorted(manquants.items())
+        )
+        super().__init__(
+            f"{len(manquants)} commande(s) non classée(s), planification "
+            f"impossible tant qu'un critère manque : {detail}"
+        )
+
+
 @dataclass
 class Evenement:
     """Une ligne du journal des décisions.
@@ -39,6 +66,10 @@ class Evenement:
     d'une exécution à l'autre, ce qu'une heure réelle interdirait. Deux
     exécutions du même scénario doivent produire le même journal, sinon
     aucun test ne peut le vérifier.
+
+    L'auteur est le rôle qui a provoqué l'événement. Il ne sert pas à
+    calculer : il sert à répondre à « qui a changé cette commande, et
+    quand », question que la protection des données rend obligatoire.
     """
 
     numero: int
@@ -46,6 +77,7 @@ class Evenement:
     description: str
     z_avant: float | None = None
     z_apres: float | None = None
+    auteur: str = "systeme"
 
     @property
     def variation(self) -> float | None:
@@ -75,10 +107,87 @@ class CoordinatorAgent:
         self.route = RouteAgent(self.donnees.noeuds, self.donnees.troncons)
         self.optimisation = OptimizationAgent(self.order, self.vehicle, self.route)
 
+    # --- Classement des commandes (préalable obligatoire) ---
+
+    def commandes_a_completer(self) -> dict[str, list[str]]:
+        """Les commandes non classées et, pour chacune, ce qui leur manque.
+
+        C'est l'écran de travail du dispatcheur avant tout calcul. Tant
+        que ce dictionnaire n'est pas vide, `planifier()` refuse.
+        """
+        return {
+            commande.id: commande.criteres_manquants
+            for commande in self.order.commandes_incompletes()
+        }
+
+    def valeurs_a_proposer(self, id_commande: str) -> dict[str, list[str]]:
+        """Les listes de valeurs que l'écran de saisie doit proposer.
+
+        L'interface ne compose jamais ces listes elle-même : une saisie
+        libre finirait par produire une valeur que le domaine ignore.
+        """
+        return self.order.criteres_attendus(id_commande)
+
+    def completer_commande(
+        self, id_commande: str, auteur: str = "dispatcheur", **criteres
+    ) -> Plan | None:
+        """Enregistre les critères saisis à la main pour une commande.
+
+        Aucune valeur par défaut n'est appliquée nulle part : si le
+        fichier ne dit rien, c'est un humain qui tranche, et le journal
+        garde trace de qui.
+
+        Replanifie seulement si un plan existait déjà et que la commande
+        vient d'entrer dans le vivier : une commande complétée avant le
+        premier calcul n'a rien à déclencher.
+        """
+        commande = self.order.completer_commande(id_commande, **criteres)
+        restants = commande.criteres_manquants
+        description = (
+            f"commande {id_commande} classée "
+            f"({commande.niveau_service.value} / {commande.type_client.value} / "
+            f"{commande.fragilite.value} / {commande.confidentialite.value})"
+            if not restants
+            else f"commande {id_commande} partiellement classée, "
+                 f"il manque encore {restants}"
+        )
+        if restants or self.plan is None:
+            self._inscrire("saisie", description, auteur=auteur)
+            return None
+        return self._reagir("saisie", description, auteur=auteur)
+
+    def modifier_commande(
+        self, id_commande: str, auteur: str = "dispatcheur", **criteres
+    ) -> Plan | None:
+        """Change un critère d'une commande déjà classée, puis replanifie.
+
+        Cas réel : le client rappelle pour passer en express, ou signale
+        que son lot est fragile. C'est un événement au même titre qu'une
+        panne — il modifie les données du problème, donc il justifie un
+        nouveau calcul et une nouvelle mesure de Z.
+        """
+        self.order.modifier_commande(id_commande, **criteres)
+        changes = ", ".join(
+            f"{nom} = {valeur}" for nom, valeur in sorted(criteres.items())
+        )
+        description = f"commande {id_commande} reclassée ({changes})"
+        if self.plan is None:
+            self._inscrire("modification", description, auteur=auteur)
+            return None
+        return self._reagir("modification", description, auteur=auteur)
+
     # --- Planification ---
 
     def planifier(self, motif: str = "planification initiale") -> Plan:
-        """Calcule un plan de tournées et l'inscrit au journal."""
+        """Calcule un plan de tournées et l'inscrit au journal.
+
+        Refuse de démarrer tant qu'une commande n'est pas classée. Ce
+        n'est pas une précaution technique : classer une commande est une
+        décision commerciale — quel service, quel client, quelle
+        précaution, quelle confidentialité — et le programme n'a pas à la
+        prendre à la place du dispatcheur.
+        """
+        self._exiger_commandes_classees()
         z_avant = self.score()["Z"] if self.plan else None
         self._liberer()
         self.plan = self.optimisation.optimiser()
@@ -97,7 +206,46 @@ class CoordinatorAgent:
         """Itinéraire détaillé d'une tournée, pour la carte du chauffeur."""
         return self.route.itineraire_complet(tournee.arrets)
 
+    def feuille_de_route(self, id_vehicule: str, role: str = "conducteur") -> dict:
+        """Ce qu'un rôle a le droit de voir de la mission d'un véhicule.
+
+        Le conducteur reçoit ses arrêts et ses colis ; sur une commande
+        sensible, il ne reçoit que l'identifiant. Le filtrage n'est pas
+        refait ici — il appartient à la commande elle-même, qui est la
+        seule à savoir ce qu'elle protège.
+        """
+        if self.plan is None:
+            raise ValueError("Aucun plan : appeler planifier() d'abord")
+        for tournee in self.plan.tournees:
+            if tournee.vehicule_id != id_vehicule:
+                continue
+            return {
+                "vehicule": id_vehicule,
+                "arrets": list(tournee.arrets),
+                "commandes": [
+                    self.order.vue(id_commande, role)
+                    for id_commande in tournee.commandes
+                ],
+            }
+        raise ValueError(f"Aucune tournée pour le véhicule {id_vehicule}")
+
     # --- Événements ---
+
+    def definir_heure_depart(self, heure: int) -> Plan | None:
+        """Règle le réseau sur la circulation d'une heure de départ donnée.
+
+        Le trafic cesse d'être une valeur figée : il découle de l'heure à
+        laquelle on décide de partir. Planifier le même jeu de commandes
+        à 6 h, 8 h et 22 h donne trois plans et trois valeurs de Z — la
+        démonstration que le trafic est bien pris en compte.
+        """
+        self.traffic.appliquer_profil_horaire(heure)
+        self.route.rafraichir()
+        description = f"départ fixé à {heure:02d} h, trafic recalculé"
+        if self.plan is None:
+            self._inscrire("horaire", description)
+            return None
+        return self._reagir("horaire", description)
 
     def declarer_panne(self, id_vehicule: str) -> Plan:
         """Scénario 2 : un véhicule tombe en panne, ses commandes repartent.
@@ -167,12 +315,23 @@ class CoordinatorAgent:
 
     # --- Interne ---
 
-    def _reagir(self, type_evenement: str, description: str) -> Plan:
+    def _exiger_commandes_classees(self) -> None:
+        """Interdit la planification tant qu'une commande n'est pas classée."""
+        manquants = self.commandes_a_completer()
+        if manquants:
+            raise CommandesIncompletes(manquants)
+
+    def _reagir(
+        self, type_evenement: str, description: str, auteur: str = "systeme"
+    ) -> Plan:
         """Enregistre un incident, replanifie, et mesure l'écart de Z."""
+        self._exiger_commandes_classees()
         z_avant = self.score()["Z"] if self.plan else None
         self._liberer()
         self.plan = self.optimisation.optimiser()
-        self._inscrire(type_evenement, description, z_avant, self.score()["Z"])
+        self._inscrire(
+            type_evenement, description, z_avant, self.score()["Z"], auteur
+        )
         return self.plan
 
     def _liberer(self) -> None:
@@ -183,9 +342,16 @@ class CoordinatorAgent:
         reste à faire, plutôt que de rafistoler le plan existant :
         c'est plus simple à écrire, plus simple à défendre, et la taille
         du problème le permet largement.
+
+        Une commande incomplète est laissée où elle est : elle n'a rien à
+        faire dans le vivier, elle attend une saisie.
         """
         for commande in self.donnees.commandes:
-            if commande.statut in (StatutCommande.EN_ATTENTE, StatutCommande.LIVREE):
+            if commande.statut in (
+                StatutCommande.INCOMPLETE,
+                StatutCommande.EN_ATTENTE,
+                StatutCommande.LIVREE,
+            ):
                 continue
             self.order.remettre_en_attente(commande.id)
 
@@ -201,6 +367,7 @@ class CoordinatorAgent:
         description: str,
         z_avant: float | None = None,
         z_apres: float | None = None,
+        auteur: str = "systeme",
     ) -> None:
         self.journal.append(
             Evenement(
@@ -209,6 +376,7 @@ class CoordinatorAgent:
                 description=description,
                 z_avant=z_avant,
                 z_apres=z_apres,
+                auteur=auteur,
             )
         )
 
@@ -223,7 +391,8 @@ class CoordinatorAgent:
         lignes = [
             f"Z = {note['Z']}  "
             f"({note['distance_km']} km · {note['vehicules']} véhicules · "
-            f"retard pondéré {note['retard_pondere']} · {note['rejets']} rejet(s))",
+            f"retard pondéré {note['retard_pondere']} · "
+            f"risque {note['risque_fragilite']} · {note['rejets']} rejet(s))",
             "",
         ]
         for tournee in sorted(self.plan.tournees, key=lambda t: t.vehicule_id):
@@ -231,7 +400,8 @@ class CoordinatorAgent:
                 f"{tournee.vehicule_id} : {' → '.join(tournee.arrets)}  "
                 f"[{tournee.nb_commandes} cmd · {tournee.charge_kg:.0f} kg · "
                 f"{tournee.distance_km:.0f} km · {tournee.jours} j · "
-                f"retard {tournee.retard_pondere:.0f}]"
+                f"retard {tournee.retard_pondere:.0f} · "
+                f"risque {tournee.risque_fragilite:.0f}]"
             )
         for rejet in self.plan.rejets:
             lignes.append(f"REJET {rejet.commande_id} : {rejet.motif}")
@@ -245,6 +415,6 @@ class CoordinatorAgent:
             suffixe = "" if variation is None else f"   ΔZ = {variation:+.1f}"
             lignes.append(
                 f"{evenement.numero:>2}. [{evenement.type}] "
-                f"{evenement.description}{suffixe}"
+                f"{evenement.description}{suffixe}  ({evenement.auteur})"
             )
         return "\n".join(lignes)

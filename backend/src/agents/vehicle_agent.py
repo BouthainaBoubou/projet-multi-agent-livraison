@@ -1,8 +1,12 @@
 """Agent responsable de la gestion des véhicules.
 
 Il ne connaît que les véhicules : ni commandes, ni routes, ni graphe.
+Il connaît en revanche la **classe de fragilité** d'une marchandise, qui
+est une caractéristique du transport et non de la commande : c'est elle
+qui décide si un matériel donné peut prendre un lot.
 """
 
+from src.models.commande import Fragilite
 from src.models.vehicule import StatutVehicule, Vehicule
 
 
@@ -19,19 +23,35 @@ class VehicleAgent:
     # --- Lectures ---
 
     def vehicules_disponibles(
-        self, pour_international: bool = False
+        self,
+        pour_international: bool = False,
+        fragilite: Fragilite | None = None,
     ) -> list[Vehicule]:
         """Les véhicules prêts à partir en tournée.
 
         À l'échelle nationale et internationale, « disponible » ne suffit
         plus : une liaison transfrontalière exige en plus une licence de
-        transport international. Le paramètre est explicite et vaut faux
-        par défaut, pour que le cas courant reste le cas simple.
+        transport international, et un lot très fragile exige un matériel
+        équipé. Les deux paramètres sont explicites et neutres par
+        défaut, pour que le cas courant reste le cas simple.
         """
         return [
             vehicule for vehicule in self.vehicules
             if vehicule.disponible
             and (vehicule.autorise_international or not pour_international)
+            and (fragilite is None or vehicule.accepte_fragilite(fragilite))
+        ]
+
+    def vehicules_equipes_fragile(self) -> list[Vehicule]:
+        """La part de la flotte capable de prendre du très fragile.
+
+        Indicateur de dimensionnement : si elle est vide, aucune commande
+        très fragile ne pourra jamais être servie, et il vaut mieux le
+        savoir avant de lancer un calcul.
+        """
+        return [
+            vehicule for vehicule in self.vehicules
+            if vehicule.equipement_fragile
         ]
 
     def capacite_disponible_totale(
@@ -62,6 +82,18 @@ class VehicleAgent:
         """
         vehicule = self._exiger_vehicule(id_vehicule)
         return vehicule.disponible and poids <= vehicule.capacite_restante
+
+    def peut_transporter_fragilite(
+        self, id_vehicule: str, fragilite: Fragilite
+    ) -> bool:
+        """Indique si le matériel de ce véhicule convient à cette classe.
+
+        Contrainte dure : aucune pénalité ne permet de la contourner.
+        Un lot très fragile chargé sur un plateau bâché arrive cassé, et
+        aucun gain de kilomètres ne compense une casse.
+        """
+        vehicule = self._exiger_vehicule(id_vehicule)
+        return vehicule.accepte_fragilite(fragilite)
 
     def peut_tenir_la_route(self, id_vehicule: str, duree_min: float) -> bool:
         """Indique si le temps de conduite restant couvre cette durée.

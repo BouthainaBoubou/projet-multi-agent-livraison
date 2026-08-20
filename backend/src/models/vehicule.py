@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from src.models.commande import Fragilite
+
 # Durée maximale de conduite journalière, en minutes (9 heures).
 # À l'échelle nationale et internationale, c'est cette limite — et non la
 # capacité — qui borne le plus souvent une tournée.
@@ -53,6 +55,16 @@ class Vehicule:
     type_vehicule: TypeVehicule = TypeVehicule.PORTEUR
     pays_base: str = "MA"       # code ISO 3166-1 alpha-2 de rattachement
     autorise_international: bool = False    # licence de transport international
+
+    # Libellé commercial du matériel (marque, modèle, carrosserie). Sert
+    # à l'affichage et au rapport ; n'entre dans aucun calcul.
+    modele: str = ""
+
+    # Suspension pneumatique intégrale et matériel d'arrimage (sangles,
+    # barres de calage, tapis antidérapant). Contrairement au modèle,
+    # cette donnée est une **contrainte** : elle décide quelles
+    # marchandises le véhicule peut transporter.
+    equipement_fragile: bool = False
 
     # --- État courant ---
     charge_actuelle_kg: float = 0.0
@@ -128,3 +140,16 @@ class Vehicule:
             self.statut is StatutVehicule.AU_DEPOT
             and self.conduite_restante_min > 0
         )
+
+    def accepte_fragilite(self, fragilite: Fragilite) -> bool:
+        """Ce véhicule peut-il transporter une marchandise de cette classe ?
+
+        Contrainte dure et volontairement minimale : seul le très fragile
+        exige un matériel équipé. Étendre l'exigence au simple fragile
+        immobiliserait la moitié de la flotte pour un gain de sécurité
+        que rien ne justifie ; le fragile est traité par une pénalité,
+        pas par une interdiction.
+        """
+        if fragilite is Fragilite.TRES_FRAGILE:
+            return self.equipement_fragile
+        return True

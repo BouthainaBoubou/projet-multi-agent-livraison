@@ -11,7 +11,7 @@ au véhicule dont la tournée s'allonge le moins. Ce n'est pas optimal —
 un solveur fera mieux — mais c'est complet, rapide, explicable, et cela
 donne la **référence** à laquelle comparer toute méthode ultérieure.
 
-Deux règles de modélisation à connaître avant de lire le code :
+Trois règles de modélisation à connaître avant de lire le code :
 
 1. **Pas de retour au dépôt.** La tournée s'achève à la dernière
    livraison. À l'échelle nationale, imposer le retour rendrait presque
@@ -20,6 +20,13 @@ Deux règles de modélisation à connaître avant de lire le code :
    demande plus de 9 h de conduite : la limite journalière ne rend pas
    la mission impossible, elle impose un repos de 11 h. Le temps écoulé
    à l'arrivée en tient compte, et c'est lui qu'on compare au délai.
+3. **La fragilité coûte des manutentions, pas des kilomètres.** Chaque
+   arrêt intermédiaire avant la livraison oblige à déplacer le
+   chargement. Un lot très fragile ne le supporte qu'une fois — c'est
+   une contrainte dure — et un lot fragile le paie dans la fonction
+   objectif. Sans ce terme, l'optimiseur entasserait les colis fragiles
+   au fond du camion le plus chargé, parce que c'est ce qui allonge le
+   moins la tournée.
 """
 
 from dataclasses import dataclass, field
@@ -75,6 +82,7 @@ class OptimizationAgent:
         beta: float = 500.0,
         gamma: float = 2.0,
         delta: float = 5000.0,
+        epsilon: float = 50.0,
     ) -> None:
         self.order = order
         self.vehicle = vehicle
@@ -84,6 +92,7 @@ class OptimizationAgent:
         self.beta = beta        # le véhicule mobilisé
         self.gamma = gamma      # la minute de retard, pondérée par la priorité
         self.delta = delta      # la commande non servie
+        self.epsilon = epsilon  # la manutention subie par une marchandise fragile
 
     # --- Optimisation ---
 
@@ -96,6 +105,10 @@ class OptimizationAgent:
         tous peuvent rouler au Maroc. Servir le national d'abord
         risquerait d'engager les semi-remorques sur Agadir et de laisser
         les commandes d'export sans véhicule.
+
+        Les commandes incomplètes n'apparaissent nulle part ici : elles
+        ne sont pas au statut « en attente », donc `OrderAgent` ne les
+        propose pas. Le blocage n'a pas besoin d'être répété.
         """
         chantiers = {
             vehicule.id: _Chantier(vehicule, [vehicule.position_actuelle])
@@ -133,6 +146,18 @@ class OptimizationAgent:
                 if profil.jours > JOURS_MAX_MISSION:
                     obstacles.append("mission trop longue")
                     continue
+                # L'insertion d'un nouvel arrêt peut faire passer une
+                # commande *déjà chargée* au-delà de sa limite : on
+                # revérifie toute la tournée, pas seulement l'arrivante.
+                saturee = self._commande_saturee(
+                    arrets, chantier.commandes + [commande]
+                )
+                if saturee is not None:
+                    obstacles.append(
+                        f"trop de manutentions pour {saturee.id} "
+                        f"({saturee.fragilite.value})"
+                    )
+                    continue
                 surcout = profil.duree_min - chantier.profil.duree_min
                 if meilleur is None or surcout < meilleur[0]:
                     meilleur = (surcout, chantier, arrets, profil)
@@ -161,7 +186,7 @@ class OptimizationAgent:
     def _refus(self, commande: Commande, chantier: _Chantier) -> str | None:
         """Raison pour laquelle ce véhicule ne peut pas prendre cette commande.
 
-        Retourne `None` s'il le peut. Les trois contraintes sont dures :
+        Retourne `None` s'il le peut. Les quatre contraintes sont dures :
         aucune pénalité ne permet de les contourner.
         """
         vehicule = chantier.vehicule
@@ -169,6 +194,11 @@ class OptimizationAgent:
             return f"aucun véhicule au point d'enlèvement {commande.origine}"
         if commande.est_internationale and not vehicule.autorise_international:
             return "aucun véhicule autorisé à l'international n'est disponible"
+        if not vehicule.accepte_fragilite(commande.fragilite):
+            return (
+                f"aucun véhicule équipé pour une marchandise "
+                f"{commande.fragilite.value} au départ de {commande.origine}"
+            )
         if chantier.charge_kg + commande.poids > vehicule.capacite_kg:
             return "capacité insuffisante sur tous les véhicules éligibles"
         return None
@@ -195,6 +225,50 @@ class OptimizationAgent:
             except CheminIntrouvable:
                 continue
 
+    # --- Fragilité ---
+
+    @staticmethod
+    def _manutentions(arrets: list[str], commande: Commande) -> int:
+        """Arrêts intermédiaires subis par une commande avant sa livraison.
+
+        Le véhicule part chargé depuis `arrets[0]` ; chaque arrêt qui
+        précède la destination oblige à déplacer le chargement pour
+        atteindre les colis du fond. Une livraison en premier arrêt n'en
+        subit aucune.
+        """
+        return arrets.index(commande.destination) - 1
+
+    def _commande_saturee(
+        self, arrets: list[str], commandes: list[Commande]
+    ) -> Commande | None:
+        """La première commande qui dépasserait sa limite de manutentions.
+
+        Retourne l'objet et non un booléen : le motif du rejet doit
+        pouvoir nommer le lot responsable. Sans cela, le dispatcheur lit
+        « trop de manutentions » sur une commande standard et cherche
+        une erreur là où il n'y en a pas — c'est un *autre* lot, déjà
+        chargé, que l'insertion aurait mis en danger.
+        """
+        for commande in commandes:
+            limite = commande.manutentions_max
+            if limite is None:
+                continue
+            if self._manutentions(arrets, commande) > limite:
+                return commande
+        return None
+
+    def _risque(self, arrets: list[str], commandes: list[Commande]) -> float:
+        """Risque de casse cumulé d'une tournée.
+
+        Une manutention de plus sur un lot très fragile pèse trois fois
+        une manutention sur un lot simplement fragile ; sur un lot
+        standard, elle ne pèse rien.
+        """
+        return sum(
+            commande.coefficient_risque * self._manutentions(arrets, commande)
+            for commande in commandes
+        )
+
     @staticmethod
     def _motif(obstacles: list[str]) -> str:
         """Choisit l'explication la plus informative parmi celles rencontrées.
@@ -205,8 +279,8 @@ class OptimizationAgent:
         peut n'être remonté que par des véhicules hors sujet.
         """
         for cle in (
-            "inaccessible", "capacité", "trop longue",
-            "autorisé à l'international", "enlèvement",
+            "inaccessible", "manutentions", "capacité", "trop longue",
+            "équipé", "autorisé à l'international", "enlèvement",
         ):
             for obstacle in obstacles:
                 if cle in obstacle:
@@ -271,6 +345,9 @@ class OptimizationAgent:
             cout_dh=round(chantier.profil.cout_dh),
             retard_pondere=round(retard, 1),
             charge_kg=chantier.charge_kg,
+            risque_fragilite=round(
+                self._risque(chantier.arrets, chantier.commandes), 1
+            ),
             arrivees={
                 noeud: round(minute)
                 for noeud, minute in chantier.profil.arrivees.items()
@@ -293,15 +370,19 @@ class OptimizationAgent:
     # --- Évaluation ---
 
     def evaluer(self, plan: Plan) -> dict[str, float]:
-        """Note un plan : Z et le détail de ses quatre termes.
+        """Note un plan : Z et le détail de ses cinq termes.
 
         Z = α × distance + β × véhicules + γ × retards pondérés
-            + δ × commandes non servies
+            + δ × commandes non servies + ε × risque de casse
 
         Le quatrième terme n'est pas décoratif. Sans lui, la meilleure
         solution serait de tout refuser : zéro kilomètre, zéro véhicule,
         zéro retard, Z = 0. Le rejet doit coûter plus cher que le pire
         service possible.
+
+        Le cinquième traduit la fragilité en coût. Il vaut zéro sur un
+        plan de marchandises standard : ajouté au modèle, il ne dégrade
+        donc pas les scénarios qui ne le concernent pas.
 
         Fonction pure : elle ne modifie rien, elle peut donc noter avec
         le même juge une solution gloutonne et une solution issue d'un
@@ -311,19 +392,22 @@ class OptimizationAgent:
         vehicules = plan.vehicules_mobilises
         retard = plan.retard_total_pondere
         rejets = len(plan.rejets)
+        risque = plan.risque_total
 
         return {
             "Z": round(
                 self.alpha * distance
                 + self.beta * vehicules
                 + self.gamma * retard
-                + self.delta * rejets,
+                + self.delta * rejets
+                + self.epsilon * risque,
                 1,
             ),
             "distance_km": round(distance, 1),
             "vehicules": vehicules,
             "retard_pondere": round(retard, 1),
             "rejets": rejets,
+            "risque_fragilite": round(risque, 1),
             "commandes_servies": plan.commandes_servies,
             "cout_dh": round(plan.cout_total_dh),
         }
