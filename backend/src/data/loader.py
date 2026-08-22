@@ -1,18 +1,3 @@
-"""Chargement des données depuis les fichiers CSV.
-
-Frontière unique entre le monde extérieur et le domaine métier : c'est le
-seul module autorisé à lire des fichiers. Il rend des objets du domaine ;
-aucun DataFrame pandas n'en sort. Le jour où les données viendront de
-PostgreSQL, seul ce module changera.
-
-Règle posée le 20/08/2026 sur les critères de classification des
-commandes : **le loader n'invente aucune valeur.** Si une colonne de
-critère est absente du fichier, ou si une cellule est vide, la commande
-est chargée quand même mais au statut `INCOMPLETE`. Elle attend la
-saisie du dispatcheur. Le fichier reste donc lisible même s'il vient d'un
-ancien format — ce qui manque n'est pas comblé, il est signalé.
-"""
-
 from dataclasses import dataclass
 from pathlib import Path
 

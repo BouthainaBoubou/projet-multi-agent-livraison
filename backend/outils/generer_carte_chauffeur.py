@@ -1,29 +1,3 @@
-"""Génère la carte de mission d'un chauffeur, sur un vrai fond de carte.
-
-Cette carte n'invente rien : elle affiche une décision prise par les
-agents. On lui donne la suite de noeuds d'une tournée, elle en tire la
-géométrie routière réelle (service `geometrie`) et la dessine sur un fond
-OpenStreetMap, avec la feuille de route à côté.
-
-Usage :
-    python -m outils.generer_carte_chauffeur --arrets CASA,MRK,AGA
-    python -m outils.generer_carte_chauffeur \\
-        --arrets CASA,MAD --itineraire CASA,RAB,TNG,TMED,ALG,MAD \\
-        --vehicule V001 --cle-api $ORS_KEY
-
-Depuis le 20/08/2026, cette carte est une **vue de rôle** : elle est
-destinée au conducteur, elle n'affiche donc que ce qu'un conducteur a le
-droit de voir. Le filtrage n'est pas écrit ici — il appartient à
-`Commande.vue("conducteur")`, seule autorité sur ce qu'une commande
-protège. Une commande sensible n'apparaît que par son identifiant : ni
-poids, ni classification, ni client. Un chauffeur transporte un colis,
-il n'a pas à savoir ce qu'il transporte ni pour qui.
-
-Tant que `RouteAgent` n'existe pas, l'itinéraire complet est passé à la
-main. Le jour où il existe, une seule ligne change dans `main` :
-`itineraire = route.itineraire_complet(tournee.sequence)`.
-"""
-
 import argparse
 import json
 import re

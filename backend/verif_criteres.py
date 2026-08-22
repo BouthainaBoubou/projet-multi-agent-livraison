@@ -1,12 +1,4 @@
-"""Contrôle des ajouts du 20/08/2026 : classification, fragilité,
-confidentialité, trafic horaire.
 
-Même esprit que `verif_agents.py` : une liste de critères d'acceptation,
-chacun vrai ou faux, aucun commentaire d'humeur. À lancer depuis
-`backend/` :
-
-    python verif_criteres.py
-"""
 
 from src.agents.coordinator_agent import CoordinatorAgent, CommandesIncompletes
 from src.data.loader import charger_tout

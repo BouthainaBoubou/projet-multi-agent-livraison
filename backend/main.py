@@ -1,9 +1,3 @@
-"""Point d'entrée de vérification : charge un scénario et affiche un résumé.
-
-Ce fichier ne contient aucune logique métier. Il sert uniquement à
-vérifier manuellement que le chargement et les agents fonctionnent.
-"""
-
 from pathlib import Path
 
 from src.agents.order_agent import OrderAgent

@@ -1,6 +1,6 @@
 """Modèle représentant un tronçon du réseau de transport.
 
-Révision du 20/08/2026 : le trafic n'est plus une valeur figée que l'on
+le trafic n'est plus une valeur figée que l'on
 déclare à la main. Chaque tronçon porte désormais un **profil**, et à
 chaque profil correspond une courbe de congestion selon l'heure. Un plan
 calculé pour un départ à 6 h et un plan calculé pour un départ à 8 h ne

@@ -1,17 +1,3 @@
-"""Génère une carte géolocalisée du réseau à partir des données du domaine.
-
-Consommateur du modèle, pas de pandas : le script charge les objets métier
-via `charger_tout` et n'en connaît que les attributs publics. Si les CSV
-changent, la carte suit sans qu'on touche à ce fichier.
-
-Deux vues, parce que le projet a deux échelles : la distribution nationale
-au Maroc, et le corridor international vers l'Europe. Une seule carte
-couvrant les deux laisserait le Maroc illisible dans un coin.
-
-Sortie : un fichier HTML autonome (aucune ressource externe), ouvrable
-hors ligne et intégrable au rapport par capture d'écran.
-"""
-
 import json
 import re
 from math import cos, radians

@@ -17,8 +17,7 @@ Le troisième geste est celui qui compte pour la soutenance : sans
 comparaison chiffrée avant/après, « le système réagit » n'est qu'une
 affirmation.
 
-Depuis le 20/08/2026, le coordinateur porte aussi la **porte d'entrée du
-blocage** : il refuse de planifier tant qu'une commande n'est pas
+ il refuse de planifier tant qu'une commande n'est pas
 classée. C'est le seul endroit où ce refus est écrit, parce que c'est le
 seul point d'entrée de l'application — le placer ailleurs reviendrait à
 le répéter dans chaque agent.

@@ -1,6 +1,6 @@
 """Modèle représentant une commande de livraison.
 
-Depuis la révision du 20/08/2026, une commande n'est plus décrite par un
+une commande n'est plus décrite par un
 poids et une priorité saisie à la main. Elle porte **quatre critères de
 classification** explicites, rangés en trois familles selon ce qu'ils
 déclenchent dans le système :

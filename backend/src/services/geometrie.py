@@ -1,31 +1,3 @@
-"""Traduit les décisions des agents en tracés routiers réels.
-
-Les agents décident d'une suite de noeuds à parcourir ; ce service
-demande à un calculateur d'itinéraire la géométrie réelle de la route
-entre ces noeuds, pour que la carte du chauffeur affiche le trajet exact
-et non un segment droit.
-
-Ce module appartient à la couche de présentation, pas au domaine : aucun
-agent ne l'importe. Le sens inverse est vrai — il consomme les objets du
-domaine sans jamais les modifier.
-
-Trois garanties, dans cet ordre d'importance :
-
-1. **Cache disque.** La géométrie d'une route ne change pas : la N1 entre
-   Casablanca et Rabat sera au même endroit demain. Chaque tronçon n'est
-   donc interrogé qu'une fois dans la vie du projet, puis relu depuis
-   `data/geometries.json`. Une fois le cache constitué, l'application
-   n'a plus besoin d'Internet — condition indispensable pour une
-   démonstration en salle.
-2. **Repli systématique.** Pas de clé d'API, pas de réseau, service en
-   panne : on retombe sur le segment droit et on le signale. La carte
-   s'affiche toujours, dégradée mais jamais vide.
-3. **Traversées maritimes exclues.** Aucun calculateur routier ne trace
-   Tanger Med - Algésiras : il n'y a pas de route sur la mer. Le tronçon
-   maritime est tracé en ligne droite, ce qui est d'ailleurs exact — un
-   ferry traverse en ligne droite.
-"""
-
 import json
 import urllib.error
 import urllib.request

@@ -1,39 +1,3 @@
-"""Authentification et contrôle d'accès.
-
-Le système n'a que **deux types d'utilisateurs**, et ils ne voient pas la
-même chose :
-
-- le **dispatcheur** décide : il planifie, déclare les incidents, classe
-  les commandes, consulte tout ;
-- le **conducteur** exécute : il consulte **sa** mission, et rien d'autre.
-
-Trois principes gouvernent ce module.
-
-**1. Le rôle vient du compte, jamais de la demande.** Tant que le rôle
-était un paramètre (`?role=conducteur`), n'importe qui pouvait écrire
-`?role=dispatcheur`. Le masquage des commandes sensibles ne protégeait
-alors plus rien : la porte était fermée et la clé scotchée dessus. Ici,
-le rôle est lu dans le compte au moment de la connexion et le demandeur
-ne peut plus le choisir.
-
-**2. Le moindre privilège.** Un conducteur ne voit pas *les* tournées, il
-voit *la sienne*. Le rôle seul ne suffit pas : le compte porte aussi le
-véhicule, et l'accès est refusé même à un conducteur authentifié qui
-demande la feuille de route d'un collègue.
-
-**3. Aucun mot de passe n'est stocké, ni journalisé, ni comparé en
-clair.** Le fichier ne contient que des empreintes, calculées avec un
-algorithme volontairement lent (PBKDF2-HMAC-SHA256, 600 000 itérations,
-recommandation OWASP). Une empreinte volée ne se retourne pas en mot de
-passe en un temps utile.
-
-Ce qui reste **hors périmètre**, et doit être écrit dans le rapport :
-HTTPS (sans lui, un jeton circule en clair sur le réseau — c'est
-indispensable en production, pas dans une démonstration locale),
-récupération de mot de passe par courriel, double facteur, et base de
-données d'utilisateurs. Le fichier CSV joue ce rôle ici.
-"""
-
 import hashlib
 import hmac
 import secrets

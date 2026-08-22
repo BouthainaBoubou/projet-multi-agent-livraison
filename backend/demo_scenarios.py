@@ -1,15 +1,3 @@
-"""Démonstration : planification initiale puis les quatre scénarios.
-
-C'est le script à projeter en soutenance. Chaque incident est suivi
-d'une replanification et d'une comparaison chiffrée de la fonction
-objectif : c'est la preuve que le système est dynamique et pas seulement
-optimisé une fois.
-
-Le réseau est **remis à l'état nominal entre deux scénarios**. Sans cela,
-chaque écart de Z mesurerait la somme des incidents précédents et plus
-aucun chiffre ne serait attribuable à une cause unique.
-"""
-
 from src.agents.coordinator_agent import CoordinatorAgent
 from src.data.loader import charger_tout
 

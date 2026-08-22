@@ -1,21 +1,3 @@
-"""Gestion des comptes : créer, changer un mot de passe, activer, lister.
-
-Le mot de passe n'est **jamais** passé en argument de la commande. Une
-commande tapée dans un terminal reste dans l'historique (`Get-History`
-sous PowerShell, `~/.bash_history` sous Linux) et s'affiche à l'écran :
-le mot de passe y resterait lisible longtemps après la connexion. Il est
-donc demandé par `getpass`, qui masque la frappe et ne laisse aucune
-trace.
-
-Usage :
-    python -m outils.creer_utilisateur liste
-    python -m outils.creer_utilisateur ajouter --identifiant dispatch --role dispatcheur
-    python -m outils.creer_utilisateur ajouter --identifiant chauffeur.v005 \\
-        --role conducteur --vehicule V005
-    python -m outils.creer_utilisateur motdepasse --identifiant dispatch
-    python -m outils.creer_utilisateur desactiver --identifiant chauffeur.v005
-"""
-
 import argparse
 import csv
 from getpass import getpass

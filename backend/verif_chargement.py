@@ -1,9 +1,3 @@
-"""Vérification de bout en bout du chargement et des trois agents.
-
-Script jetable de contrôle : il ne fait pas partie de l'application, il
-sert à prouver que les données et les modèles sont cohérents après le
-changement de périmètre.
-"""
 
 from src.agents.order_agent import OrderAgent
 from src.agents.traffic_agent import TrafficAgent

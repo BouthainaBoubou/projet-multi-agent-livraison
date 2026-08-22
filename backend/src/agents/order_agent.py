@@ -3,7 +3,7 @@
 Il ne connaît que les commandes : ni véhicules, ni routes, ni graphe.
 Toute question croisant deux domaines appartient à l'agent qui orchestre.
 
-Depuis le 20/08/2026, l'agent porte aussi la **saisie** : une commande
+l'agent porte aussi la **saisie** : une commande
 dont un critère de classification manque au fichier est bloquée au
 statut `INCOMPLETE`, et c'est le dispatcheur qui la débloque en la
 complétant. Le programme ne choisit jamais à sa place.

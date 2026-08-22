@@ -1,16 +1,3 @@
-"""Récupère une fois pour toutes la géométrie réelle de tout le réseau.
-
-À lancer une seule fois, avec une connexion Internet et une clé d'API.
-Le résultat est écrit dans `data/geometries.json` : ensuite, toutes les
-cartes de chauffeur se dessinent hors ligne, y compris le jour de la
-soutenance.
-
-Usage :
-    python -m outils.preparer_cache --cle-api VOTRE_CLE
-    python -m outils.preparer_cache --fournisseur osrm      (sans clé)
-    python -m outils.preparer_cache --etat                  (rien ne change)
-"""
-
 import argparse
 
 from src.data.loader import charger_tout

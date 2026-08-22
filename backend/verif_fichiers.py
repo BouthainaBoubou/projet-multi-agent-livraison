@@ -67,6 +67,11 @@ MARQUEURS: dict[str, list[str]] = {
                                         "definir_heure_depart",
                                         "feuille_de_route",
                                         "commandes_a_completer"],
+    # API
+    "src/api/schemas.py": ["DemandeConnexion", "DemandeIncident",
+                           "DemandeCriteres"],
+    "src/api/application.py": ["construire_application", "exiger_acces_tournee",
+                               "verrou_ecriture", "CORSMiddleware"],
     # Outils
     "outils/generer_carte_chauffeur.py": ["ROLE_DESTINATAIRE",
                                           "itineraire_complet",
@@ -75,6 +80,7 @@ MARQUEURS: dict[str, list[str]] = {
     # Contrôles
     "verif_criteres.py": ["CommandesIncompletes", "critères d'acceptation"],
     "verif_securite.py": ["exiger_acces_tournee", "critères d'acceptation"],
+    "verif_api.py": ["TestClient", "critères d'acceptation"],
 }
 
 # Traces de l'ancienne version qui ne doivent plus exister nulle part.
@@ -101,6 +107,7 @@ INITS: list[str] = [
     "src/models/__init__.py",
     "src/data/__init__.py",
     "src/agents/__init__.py",
+    "src/api/__init__.py",
     "src/securite/__init__.py",
     "src/services/__init__.py",
     "outils/__init__.py",

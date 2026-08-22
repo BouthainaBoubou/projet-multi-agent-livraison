@@ -1,9 +1,3 @@
-"""Vérifie les critères d'acceptation des deux agents ajoutés.
-
-Un test par ligne du tableau des critères. Le script ne dépend d'aucun
-cadre de test : il s'exécute avec `python verif_agents.py` et affiche
-OK ou ECHEC pour chaque point.
-"""
 
 from time import perf_counter
 
